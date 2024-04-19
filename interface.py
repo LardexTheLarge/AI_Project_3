@@ -28,26 +28,38 @@ llm=ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=OPENAI_MODEL, temperatu
 app = gr.Blocks(fill_height=True)
 
 #ChatBot function
-def respond(message, chat_history):
-    # Set up the built-in wikipedia tool.
+def chatbotfunc(message, chat_history):
+    # Set up the built-in Wikipedia tool.
     tools = load_tools(['wikipedia'], llm=llm)
 
-    # Initialize the agent.
-    agent = initialize_agent(tools, agent="chat-zero-shot-react-description", handle_parsing_errors=True ,llm=llm)
+    # Initialize the agent with specified parameters.
+    # 'agent' parameter specifies the type of agent to use ('chat-zero-shot-react-description').
+    # 'handle_parsing_errors' parameter is set to True to handle any parsing errors that may occur.
+    # 'llm' parameter is passed to the agent for language model configuration.
+    agent = initialize_agent(tools, agent="chat-zero-shot-react-description", handle_parsing_errors=True, llm=llm)
+
+    # Run the agent to generate a response based on the input message.
     bot_message = agent.run(message)
+
+    # Append the message and bot's response to the chat history.
     chat_history.append((message, bot_message))
+
+    # Return an empty string (response) along with the updated chat history.
     return "", chat_history
 
 
-def extract_text_from_pdf(file_data):
+
+def pdfBot(query, file_data):
+    # Check if file_data is None (no file uploaded)
+    if file_data is None:
+        return "Error: No PDF file uploaded."
+
     text = ""
     try:
-        print("Attempting to open PDF document...")
-        # Open the PDF file from the uploaded file data
+        # Open the PDF file
         pdf_document = fitz.open(stream=file_data, filetype="pdf")
 
         # Iterate over each page in the PDF
-        print(f"Total number of pages: {pdf_document.page_count}")
         for page_num in range(pdf_document.page_count):
             page = pdf_document[page_num]
             text += page.get_text()
@@ -56,76 +68,59 @@ def extract_text_from_pdf(file_data):
         pdf_document.close()
 
     except Exception as e:
-        print(f"Error: {e}")
-    
-    print(f"Extracted text length: {len(text)}")
-    return text
+        return f"Error: {e}"
 
-#Forecast bot function
-def pdfBot(query, file, file_data):
-    text = ""
-    try:
-        print("Attempting to open PDF document...")
-        # Open the PDF file from the uploaded file data
-        pdf_document = fitz.open(stream=file_data, filetype="pdf")
+    # Check if no text was extracted
+    if not text:
+        return "Error: No text extracted from the PDF."
 
-        # Iterate over each page in the PDF
-        print(f"Total number of pages: {pdf_document.page_count}")
-        for page_num in range(pdf_document.page_count):
-            page = pdf_document[page_num]
-            text += page.get_text()
+    # Construct the format template
+    format_template = f"{text}\n\n{query}"
 
-        # Close the PDF document
-        pdf_document.close()
-
-    except Exception as e:
-        print(f"Error: {e}")
-
-    pdf_text = extract_text_from_pdf(file)
-
-    format_template = f"{pdf_text}\n\n{query}"
-
-    print(format_template)
-
+    # Define input variables for the prompt template
     input_variables = ["query"]
 
+    # Create a prompt template
     prompt_template = PromptTemplate(
         input_variables=input_variables,
         template=format_template
     )
 
+    # Create an LLMChain instance
     chain = LLMChain(llm=llm, prompt=prompt_template)
 
+    # Invoke the chain with the query
     result = chain.invoke({"query": query})
 
     return result["text"]
 
 
-# Add tabs to the Gradio Blocks
+# Define the interface using Gradio.
 with app:
-    #A chatbot that will be used to talk with our first model we trained
+    # Create a tab for the ChatBot.
     with gr.Tab("ChatBot"):
+        # Initialize a Chatbot component.
         chatbot = gr.Chatbot()
+
+        # Create a textbox for user input without a label and scale it to size 1.
         msg = gr.Textbox(placeholder="Ask Your Question", show_label=False, scale=1)
+
+        # Create a ClearButton component that clears the textbox and chatbot when clicked.
         clear = gr.ClearButton([msg, chatbot])
-        msg.submit(respond, [msg, chatbot], [msg, chatbot])
 
+        # Submit user input from the textbox to the chatbot when submitted.
+        msg.submit(chatbotfunc, [msg, chatbot], [msg, chatbot])
 
-    with gr.Tab("PDFUploader"):
-        gr.File(label="Upload a file:", type='binary'),
-        
-    #A basic input/output which will take some text and output a prediction that will be used with our second Model
+    # Create a tab for the PDF Bot.
     with gr.Tab("PDF Bot"):
-        with gr.Row():
+            # Define the Gradio interface for the PDF Bot.
+            gr.Interface(fn=pdfBot, title="Upload Your Desired PDF", allow_flagging='never',
+                        inputs=[
+                            gr.Textbox(lines=1, placeholder="Input", label="Ask a Question about your PDF:"),
+                            gr.File(label="12 pages or less", type='binary'),
+                        ],
+                        outputs=gr.Textbox(lines=16, label="Answer:", show_copy_button=True, interactive=False))
 
-        
-            gr.Interface(fn=pdfBot, allow_flagging='never',
-                            inputs=[
-                            gr.Textbox(lines=1, placeholder="Input", label="Question"),
-                            gr.File(label="Upload a file:", type='binary'),
-                            #gr.CheckboxGroup(["USA", "Japan", "Canada"], label="Countries", info="Where is your prediction"),
-                            ],
-                            outputs=gr.Textbox(lines=12,label="Results", show_copy_button=True, interactive=False))
 
 
 # Launch the app
