@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+Interface.ipynb
 images
 # C extensions
 *.so
